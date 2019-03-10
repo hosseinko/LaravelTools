@@ -10,7 +10,7 @@ class FindTranslations extends Command {
      *
      * @var string
      */
-    protected $signature = 'app:find-translations {--create-file=no}';
+    protected $signature = 'app:find-translations {--create-file=no} {--use-keys-as-values=no}';
 
     /**
      * The console command description.
@@ -19,8 +19,9 @@ class FindTranslations extends Command {
      */
     protected $description = 'Finds strings that are needed to be translated';
 
-    private $strings = [];
-    private $tmp     = [];
+    private $strings         = [];
+    private $tmp             = [];
+    private $useKeysAsValues = 'no';
 
     /**
      * Create a new command instance.
@@ -40,6 +41,7 @@ class FindTranslations extends Command {
     public function handle() {
         try {
             $createTranslationFiles = $this->option('create-file');
+            $this->useKeysAsValues = $this->option('use-keys-as-values');
 
             $path = app_path();
             $dirs = $this->listDirs($path);
@@ -111,7 +113,7 @@ class FindTranslations extends Command {
             foreach ($this->strings as $key => $values) {
                 foreach ($dirs as $dir) {
                     $filename = $path . '/' . $dir . '/' . $key . '.php';
-                    $this->updateFileContents($filename, $values);
+                    $this->updateFileContents($dir, $key, $filename, $values);
                 }
             }
         } else {
@@ -119,30 +121,29 @@ class FindTranslations extends Command {
         }
     }
 
-    private function updateFileContents($filename, $data) {
-        if (file_exists($filename)) {
-            $fileContents = require_once $filename;
-            $rawFilename = str_replace('.php', '', basename($filename));
+    private function updateFileContents($lang, $filename, $fullFilename, $data) {
+        if (file_exists($fullFilename)) {
+            $fileContents = require_once $fullFilename;
 
             if (is_array($fileContents)) {
                 $newData = [];
-                foreach ($this->tmp[$rawFilename] as $value) {
+                foreach ($this->tmp[$filename] as $value) {
                     if (!array_key_exists($value, $fileContents)) {
-                        $newData[][0] = $value . '| ';
+                        $newData[][0] = $value;
                     } else {
                         $newData[][0] = $value . '|' . $fileContents[$value];
                     }
                 }
-                file_put_contents($filename, $this->arrayToFileContent($newData));
+                file_put_contents($fullFilename, $this->arrayToFileContent($lang, $newData));
             } else {
-                file_put_contents($filename, $this->arrayToFileContent($data));
+                file_put_contents($fullFilename, $this->arrayToFileContent($lang, $data));
             }
         } else {
-            file_put_contents($filename, $this->arrayToFileContent($data));
+            file_put_contents($fullFilename, $this->arrayToFileContent($lang, $data));
         }
     }
 
-    private function arrayToFileContent($values) {
+    private function arrayToFileContent($lang, $values) {
         $data = '<?php' . chr(10);
         $data .= 'return [' . chr(10);
         foreach ($values as $value) {
@@ -150,7 +151,11 @@ class FindTranslations extends Command {
             if (is_array($explodedData) && count($explodedData) > 1) {
                 $data .= str_repeat(' ', 4) . "'" . $explodedData[0] . "' => '" . trim($explodedData[1]) . "'," . chr(10);
             } else {
-                $data .= str_repeat(' ', 4) . "'" . $value[0] . "' => ''," . chr(10);
+                if ($lang == 'en' && $this->useKeysAsValues == 'yes') {
+                    $data .= str_repeat(' ', 4) . "'" . $value[0] . "' => '" . ucfirst(str_replace('_', ' ', $value[0])) . "'," . chr(10);
+                } else {
+                    $data .= str_repeat(' ', 4) . "'" . $value[0] . "' => ''," . chr(10);
+                }
             }
         }
         $data .= '];';
